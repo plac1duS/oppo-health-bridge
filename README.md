@@ -96,4 +96,8 @@ python -m bridge restore <备份文件> --yes        # 覆盖恢复（恢复前�
 - [foxlesbiao/oppo-health-cloud-mcp](https://github.com/foxlesbiao/oppo-health-cloud-mcp)：云端读取与 MCP。
 - [foxlesbiao/oppo-health-export](https://github.com/foxlesbiao/oppo-health-export)：手机本地数据库导出。
 
-当前仓库只包含本项目的设计文档，未复制或执行以上项目代码。后续若复用实现，保留对应许可证、版权声明和来源记录。
+本仓库为本项目自行实现的代码与设计文档，未复制或执行以上项目代码。后续若复用实现，保留对应许可证、版权声明和来源记录。
+
+## 许可证
+
+本项目以 MIT 许可证开源，见 [LICENSE](LICENSE)。仅供个人学习与研究，使用时请遵守相关设备与 App 的条款；读取的是你自己设备上的个人数据，请勿用于他人数据或商业用途。
