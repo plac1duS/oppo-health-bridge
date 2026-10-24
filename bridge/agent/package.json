@@ -1,0 +1,9 @@
+{
+  "name": "oppo-health-bridge-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frida read-only agent for OPPO Health Bridge",
+  "dependencies": {
+    "frida-java-bridge": "^6.0.0"
+  }
+}

@@ -1,0 +1,28 @@
+# Local tools, environments, and generated files
+.tools/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+
+# Personal data and credentials must never enter the repository
+.private/
+data/
+backups/
+exports/
+logs/
+auth.json
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Node deps for the Frida agent (installed at setup)
+node_modules/
