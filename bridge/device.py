@@ -168,7 +168,7 @@ def preconditions(serial: str | None = None) -> tuple[DeviceInfo, list[str]]:
     problems: list[str] = []
     if not info.rooted:
         problems.append("设备未取得 Root（需要 su）。")
-    if PACKAGE not in (info.app_version and PACKAGE or PACKAGE) and not info.app_version:
+    if not info.app_version:
         problems.append("未检测到欢太健康，或无法读取版本。")
     if not info.db_exists:
         problems.append("未找到 database.db（需要 Root 且 App 至少同步过一次）。")

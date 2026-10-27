@@ -56,6 +56,22 @@ def _ymd_to_dash(n) -> str:
     return f"{s[0:4]}-{s[4:6]}-{s[6:8]}" if len(s) == 8 else s
 
 
+def _last_data_day(conn: sqlite3.Connection, m) -> str | None:
+    """本地该指标最新数据所在的本地日期 'YYYY-MM-DD'（无数据为 None）。"""
+    if m.time_col and m.time_kind in ("ms", "yyyymmdd"):
+        col, kind = m.time_col, m.time_kind
+    elif any(r[1] == "date" for r in conn.execute(f'PRAGMA table_info("{m.table}")')):
+        col, kind = "date", "yyyymmdd"  # 如睡眠每夜汇总：无事件时间列，但有日历日 date
+    else:
+        return None
+    v = conn.execute(f'SELECT MAX("{col}") FROM "{m.table}"').fetchone()[0]
+    if v is None:
+        return None
+    if kind == "ms":
+        return datetime.fromtimestamp(int(v) / 1000, tz=TZ).strftime("%Y-%m-%d")
+    return _ymd_to_dash(v)
+
+
 # ---------------------------------------------------------------- status
 def health_status() -> dict:
     p = db_path()
@@ -73,12 +89,14 @@ def health_status() -> dict:
                 "SELECT last_modified,last_rowid,backfill_floor,rows_stored,last_sync_ms,last_error "
                 "FROM sync_state WHERE metric=?", (m.key,)
             ).fetchone() if _has_table(conn, "sync_state") else None
-            cnt = conn.execute(f'SELECT COUNT(*) FROM "{m.table}"').fetchone()[0] if _has_table(conn, m.table) else 0
+            has = _has_table(conn, m.table)
+            cnt = conn.execute(f'SELECT COUNT(*) FROM "{m.table}"').fetchone()[0] if has else 0
             metrics.append({
                 "key": m.key, "label": m.label, "table": m.table,
                 "rows_local": cnt,
                 "synced": bool(st and st["last_modified"] >= 0),
                 "cursor_time": _fmt(st["last_modified"]) if st else None,
+                "last_data_day": _last_data_day(conn, m) if has else None,
                 "backfill_floor": st["backfill_floor"] if st else None,
                 "last_sync": _fmt(st["last_sync_ms"]) if st else None,
                 "last_error": st["last_error"] if st else None,

@@ -112,17 +112,19 @@ def cmd_restore(args) -> int:
 
 
 def cmd_status(args) -> int:
+    from . import query
     store = Store()
     try:
+        last_day = {m["key"]: m["last_data_day"] for m in query.health_status()["metrics"]}
         print(f"本地数据库：{db_path()}")
         print(f"上次同步完成：{_fmt_ms(store.get_meta('last_sync_done_ms'))}")
-        print(f"{'指标':<22}{'本地行数':>10}{'游标时间(本地)':>24}  状态")
+        print(f"{'指标':<22}{'本地行数':>10}{'数据最新到':>14}{'游标时间(本地)':>24}  状态")
         for m in METRICS:
             last_mod, _last_rowid, floor, rows_stored = store.get_state(m)
             cnt = store.table_count(m)
             cursor = _fmt_ms(last_mod if last_mod > 0 else None)
             state = "就绪" if last_mod >= 0 else "未同步"
-            print(f"{m.label+'('+m.key+')':<22}{cnt:>10}{cursor:>24}  {state}")
+            print(f"{m.label+'('+m.key+')':<22}{cnt:>10}{last_day.get(m.key) or '—':>14}{cursor:>24}  {state}")
     finally:
         store.close()
     return 0

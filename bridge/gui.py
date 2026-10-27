@@ -27,6 +27,7 @@ class BridgeGUI:
         self.worker: threading.Thread | None = None
         self.stop_event = threading.Event()
         self.serial: str | None = None
+        self.ready = False  # 最近一次检测是否满足全部前置条件
 
         root.title("欢太健康桥 · 本地同步")
         root.geometry("760x620")
@@ -65,10 +66,10 @@ class BridgeGUI:
         # —— 状态与数据 ——
         fr_data = ttk.LabelFrame(root, text="3. 本地数据")
         fr_data.pack(fill="both", expand=True, **pad)
-        cols = ("metric", "rows", "cursor", "last_sync")
+        cols = ("metric", "rows", "last_day", "last_sync")
         self.tree = ttk.Treeview(fr_data, columns=cols, show="headings", height=8)
         for c, t, w in [("metric", "指标", 180), ("rows", "本地行数", 90),
-                        ("cursor", "游标时间", 170), ("last_sync", "最后同步", 170)]:
+                        ("last_day", "数据最新到", 170), ("last_sync", "最后同步", 170)]:
             self.tree.heading(c, text=t); self.tree.column(c, width=w, anchor="w")
         self.tree.pack(fill="both", expand=True, padx=8, pady=(6, 4))
         btns = ttk.Frame(fr_data); btns.pack(fill="x", padx=8, pady=(0, 8))
@@ -98,7 +99,7 @@ class BridgeGUI:
     def _busy(self, on: bool, allow_stop: bool = False) -> None:
         for b in self._action_buttons:
             b.config(state="disabled" if on else "normal")
-        if not on and self.serial is None:
+        if not on and not self.ready:
             self.btn_sync.config(state="disabled")
         self.btn_stop.config(state="normal" if (on and allow_stop) else "disabled")
 
@@ -152,10 +153,12 @@ class BridgeGUI:
     # ---------------- 动作 ----------------
     def on_detect(self) -> None:
         def task(log):
+            self.ready = False  # 检测出错（如没连手机）时保持“立即同步”不可点
             return device.preconditions()
         def done(result):
             info, problems = result
             self.serial = info.serial
+            self.ready = not problems
             lines = [f"{info.manufacturer} {info.model}  Android {info.android_release}",
                      f"欢太健康 {info.app_version or '未检测到'}   Root {'是' if info.rooted else '否'}   "
                      f"数据库 {'存在' if info.db_exists else '未找到'}"]
@@ -172,14 +175,22 @@ class BridgeGUI:
         mode = self.range_mode.get()
         full = mode == "full"
         incremental = mode == "incremental"
-        days = None if full else int(self.days_var.get())
+        days = None
+        if not full:  # “增量”也会用到天数：本地还没数据的指标按最近 N 天回填
+            try:
+                days = int(self.days_var.get())
+                if days < 1:
+                    raise ValueError
+            except (tk.TclError, ValueError):
+                messagebox.showwarning("天数不对", "“仅最近”的天数请填写 1 以上的整数，例如 7。")
+                return
         if full and not messagebox.askyesno("确认", "同步全部可读历史会从头重新遍历，可能耗时较长"
                                             "（可随时“停止”，进度会保存可续传）。继续？"):
             return
         desc = "按天增量" if incremental else ("全部历史" if full else f"最近 {days} 天")
         self._append_log(f"—— 开始同步（{desc}）——")
         def task(log):
-            serial = device.pick_device()
+            serial = device.pick_device(self.serial)  # 同步刚才检测的那台手机
             log("确保 frida-server 运行…")
             device.ensure_frida_server(serial)
             # “增量”从本地最后一天起只取新数据（无本地数据的指标按“仅最近 N 天”）；
@@ -188,7 +199,10 @@ class BridgeGUI:
                             should_stop=self.stop_event.is_set)
         def done(summary):
             ok = sum(1 for v in summary.values() if v >= 0)
-            self._append_log(f"—— 同步结束：{ok}/{len(summary)} 项完成 ——")
+            if self.stop_event.is_set():
+                self._append_log(f"—— 已停止：{ok} 项已处理，进度已保存，下次同步会接着来 ——")
+            else:
+                self._append_log(f"—— 同步结束：{ok}/{len(summary)} 项完成 ——")
             self.on_refresh()
         self._run(task, done, allow_stop=True)
 
@@ -207,7 +221,7 @@ class BridgeGUI:
                 return
             for m in st["metrics"]:
                 self.tree.insert("", "end", values=(
-                    f"{m['label']}", m["rows_local"], m["cursor_time"] or "—", m["last_sync"] or "—"))
+                    f"{m['label']}", m["rows_local"], m["last_data_day"] or "—", m["last_sync"] or "—"))
         self._run(task, done)
 
     def _show_export_dir(self) -> None:
