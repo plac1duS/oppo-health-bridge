@@ -13,6 +13,7 @@
 - Windows 电脑本地运行，中文界面，数据保存在电脑上的 SQLite 数据库。
 - 首次提供“同步全部可读取历史”和“仅同步最近数据”，可中断续传。
 - 后续点击“立即同步”手动更新，从上次成功进度继续，补齐晚到记录与修订。
+- **按天增量**（本地已有数据时界面默认选中）：自动识别每个指标本地已同步到的最后一天，只读取该日（含，补齐当天未完的数据）及之后的数据，之前的天不再遍历。无事件时间列的指标（睡眠每夜汇总）仍按修订游标增量。
 - 先通过 USB 连接本人 Root 手机检查兼容性，尽量自动识别型号、Android 与欢太健康版本。
 - 数据采集优先验证手机本地读取；不兼容时再评估本人欢太账号云端记录的读取，并明确说明需要联网和账号授权。云端数据来源不等于云端托管数据库。
 - AI 通过本机只读 MCP 查询已入库数据，手机断开后仍可查询；电脑关闭时此本地接口不可用。
@@ -38,6 +39,7 @@
 python -m bridge detect             # 检测设备与前置条件
 python -m bridge sync --days 7      # 仅最近 7 天回填（首次）
 python -m bridge sync --full        # 全部可读历史
+python -m bridge sync --incremental # 按天增量：从上次同步到的那天起只取新数据
 python -m bridge status             # 本地库与各指标游标/行数
 python -m bridge gui                # 打开图形界面
 ```
@@ -74,12 +76,14 @@ python -m bridge serve-mcp          # stdio，换行分隔 JSON-RPC，零第三�
 ```bash
 python -m bridge export --format both            # CSV（按指标拆分）+ JSON（嵌套汇总）+ manifest
 python -m bridge export --start 2026-10-01 --end 2026-10-24
+python -m bridge export --out D:\健康导出\本次         # 指定本次输出目录
+python -m bridge export-dir D:\健康导出                # 设置默认导出位置（不带参数查看，--reset 恢复默认）
 python -m bridge backup                          # 一致快照（sqlite backup API，非文件复制）
 python -m bridge backups                         # 列出备份
 python -m bridge restore <备份文件> --yes        # 覆盖恢复（恢复前自动备份当前库）
 ```
 
-导出只读本地库、不改源数据；CSV 用标准转义并带单位，JSON 保留嵌套结构；逐点序列在 CSV。备份/恢复用 SQLite 在线备份保证一致，恢复可逆（自动留 `pre-restore-*` 备份）。默认输出在数据目录 `%LOCALAPPDATA%\OPPOHealthBridge\{exports,backups}`。
+导出只读本地库、不改源数据；CSV 用标准转义并带单位，JSON 保留嵌套结构；逐点序列在 CSV。备份/恢复用 SQLite 在线备份保证一致，恢复可逆（自动留 `pre-restore-*` 备份）。默认输出在数据目录 `%LOCALAPPDATA%\OPPOHealthBridge\{exports,backups}`；导出位置可自定义——图形界面点“导出”时选择文件夹（会记住），命令行用 `export-dir`，设置保存在数据目录的 `settings.json`。每次导出在导出位置下新建 `export-时间戳` 文件夹。
 
 运行依赖见仓库 `.tools`（已忽略：adb、frida-server）与 `bridge/agent`（`npm install` 装 frida-java-bridge）。后续可打磨：`sync --full` 完整历史回填、`sport_mode` 代码表与运动轨迹/心电、离线解密后端、打包为免 Python 环境的安装包。
 

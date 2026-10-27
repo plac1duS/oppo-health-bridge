@@ -1,7 +1,7 @@
 """欢太健康桥 · 图形界面（Tkinter，标准库，无第三方依赖，本机窗口不开网络）。
 
-功能：连接检测、首次范围选择、立即同步（可停止/续传）、状态查看、导出、备份/恢复、
-打开数据文件夹。耗时操作在后台线程执行，经队列回传日志，主线程刷新界面。
+功能：连接检测、范围选择（按天增量/仅最近/全部）、立即同步（可停止/续传）、状态查看、
+导出（可自定义导出位置）、备份/恢复、打开数据文件夹。耗时操作在后台线程执行，经队列回传日志，主线程刷新界面。
 """
 from __future__ import annotations
 import os
@@ -14,7 +14,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 from . import device, query
-from .config import db_path, data_dir, METRICS
+from .config import db_path, data_dir, export_root, save_setting, METRICS
 from .sync import sync_all
 from .export import export_all
 from .backup import backup as do_backup, restore as do_restore
@@ -46,7 +46,10 @@ class BridgeGUI:
         fr_sync = ttk.LabelFrame(root, text="2. 同步")
         fr_sync.pack(fill="x", **pad)
         row = ttk.Frame(fr_sync); row.pack(fill="x", padx=8, pady=4)
-        self.range_mode = tk.StringVar(value="recent")
+        # 本地已有数据时默认“按天增量”，首次默认“仅最近 N 天”
+        self.range_mode = tk.StringVar(value="incremental" if db_path().exists() else "recent")
+        ttk.Radiobutton(row, text="增量（接着上次同步到的那天）", variable=self.range_mode,
+                        value="incremental").pack(side="left", padx=(0, 16))
         ttk.Radiobutton(row, text="仅最近", variable=self.range_mode, value="recent").pack(side="left")
         self.days_var = tk.IntVar(value=7)
         ttk.Spinbox(row, from_=1, to=3650, width=6, textvariable=self.days_var).pack(side="left", padx=(2, 2))
@@ -81,7 +84,10 @@ class BridgeGUI:
         self.btn_folder.pack(side="right")
 
         self.lbl_db = ttk.Label(root, text=f"本地数据库：{db_path()}", foreground="#555")
-        self.lbl_db.pack(fill="x", padx=12, pady=(0, 8))
+        self.lbl_db.pack(fill="x", padx=12, pady=(0, 2))
+        self.lbl_export = ttk.Label(root, foreground="#555")
+        self.lbl_export.pack(fill="x", padx=12, pady=(0, 8))
+        self._show_export_dir()
 
         self._action_buttons = [self.btn_detect, self.btn_sync, self.btn_refresh,
                                  self.btn_export, self.btn_backup, self.btn_restore]
@@ -163,17 +169,22 @@ class BridgeGUI:
         self._run(task, done)
 
     def on_sync(self) -> None:
-        full = self.range_mode.get() == "full"
+        mode = self.range_mode.get()
+        full = mode == "full"
+        incremental = mode == "incremental"
         days = None if full else int(self.days_var.get())
-        if full and not messagebox.askyesno("确认", "同步全部可读历史可能耗时较长（可随时“停止”，进度会保存可续传）。继续？"):
+        if full and not messagebox.askyesno("确认", "同步全部可读历史会从头重新遍历，可能耗时较长"
+                                            "（可随时“停止”，进度会保存可续传）。继续？"):
             return
-        self._append_log(f"—— 开始同步（{'全部历史' if full else f'最近 {days} 天'}）——")
+        desc = "按天增量" if incremental else ("全部历史" if full else f"最近 {days} 天")
+        self._append_log(f"—— 开始同步（{desc}）——")
         def task(log):
             serial = device.pick_device()
             log("确保 frida-server 运行…")
             device.ensure_frida_server(serial)
+            # “增量”从本地最后一天起只取新数据（无本地数据的指标按“仅最近 N 天”）；
             # “全部可读历史”清空游标从头回填；“仅最近”按游标增量续传
-            return sync_all(serial, days=days, reset=full, log=log,
+            return sync_all(serial, days=days, reset=full, since_last=incremental, log=log,
                             should_stop=self.stop_event.is_set)
         def done(summary):
             ok = sum(1 for v in summary.values() if v >= 0)
@@ -199,10 +210,21 @@ class BridgeGUI:
                     f"{m['label']}", m["rows_local"], m["cursor_time"] or "—", m["last_sync"] or "—"))
         self._run(task, done)
 
+    def _show_export_dir(self) -> None:
+        self.lbl_export.config(text=f"导出位置：{export_root()}（点“导出”时可更改）")
+
     def on_export(self) -> None:
+        root_dir = filedialog.askdirectory(
+            title="选择导出位置（将在其中新建 export-时间戳 文件夹）",
+            initialdir=str(export_root()) if export_root().exists() else str(data_dir()),
+            mustexist=False)
+        if not root_dir:
+            return
+        save_setting("export_dir", root_dir)  # 记住，下次默认用这里
+        self._show_export_dir()
         def task(log):
             log("导出中…")
-            return export_all(fmt="both")
+            return export_all(fmt="both")  # 默认 = 刚保存的导出位置/export-时间戳
         def done(res):
             self._append_log(f"已导出到：{res['outdir']}")
             if messagebox.askyesno("导出完成", f"已导出到：\n{res['outdir']}\n\n打开该文件夹？"):

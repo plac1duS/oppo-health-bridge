@@ -5,6 +5,7 @@
 (modified, rowid) 做 keyset 增量，并按主键去重/合并修订。
 """
 from __future__ import annotations
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,33 @@ def data_dir() -> Path:
 
 def db_path() -> Path:
     return data_dir() / "health.db"
+
+
+# ---- 用户设置（数据目录/settings.json，如自定义导出位置） ----
+def settings_path() -> Path:
+    return data_dir() / "settings.json"
+
+
+def load_settings() -> dict:
+    try:
+        return json.loads(settings_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_setting(key: str, value) -> None:
+    s = load_settings()
+    if value is None:
+        s.pop(key, None)
+    else:
+        s[key] = value
+    settings_path().write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def export_root() -> Path:
+    """导出的父目录：用户自定义（settings.export_dir）或默认 数据目录/exports。"""
+    custom = load_settings().get("export_dir")
+    return Path(custom) if custom else data_dir() / "exports"
 
 
 @dataclass(frozen=True)

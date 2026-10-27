@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import query
-from .config import db_path, data_dir
+from .config import db_path, export_root
 
 TZ = query.TZ
 
@@ -66,7 +66,7 @@ def export_all(outdir: str | Path | None = None, fmt: str = "both",
     if not start or not end:
         raise query.QueryError("本地无数据可导出。")
     ts = datetime.now(TZ).strftime("%Y%m%d-%H%M%S")
-    outdir = Path(outdir) if outdir else (data_dir() / "exports" / f"export-{ts}")
+    outdir = Path(outdir) if outdir else (export_root() / f"export-{ts}")
     outdir.mkdir(parents=True, exist_ok=True)
 
     files: list[dict] = []

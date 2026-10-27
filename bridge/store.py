@@ -109,6 +109,30 @@ class Store:
         )
         self.conn.commit()
 
+    def local_max_time(self, metric: Metric) -> int | None:
+        """本地已入库的最大事件时间（time_col），无表/无数据/无时间列返回 None。"""
+        if metric.time_col is None:
+            return None
+        try:
+            row = self.conn.execute(
+                f"SELECT MAX({_q(metric.time_col)}) FROM {_q(metric.local_table)}").fetchone()
+        except sqlite3.OperationalError:
+            return None
+        return int(row[0]) if row and row[0] is not None else None
+
+    def mark_synced(self, metric: Metric, added: int) -> None:
+        """按天增量模式：不移动 modified 游标，只累计行数与同步时间。"""
+        self.conn.execute(
+            """INSERT INTO sync_state(metric, rows_stored, last_sync_ms, last_error)
+                 VALUES(?,?,?,NULL)
+               ON CONFLICT(metric) DO UPDATE SET
+                 rows_stored=sync_state.rows_stored+excluded.rows_stored,
+                 last_sync_ms=excluded.last_sync_ms,
+                 last_error=NULL""",
+            (metric.key, added, int(time.time() * 1000)),
+        )
+        self.conn.commit()
+
     def set_error(self, metric: Metric, err: str) -> None:
         self.conn.execute(
             "INSERT INTO sync_state(metric, last_error) VALUES(?,?) "
